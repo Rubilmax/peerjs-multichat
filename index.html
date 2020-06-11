@@ -14,6 +14,7 @@
         <!-- Material Design stylesheets -->
         <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css">
+        <script async src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
 
         <style>
             body {
@@ -63,6 +64,7 @@
                         </form>
                     </div>
 
+                    <p v-if="loading">Loading...</p>
                     <p v-if="peerError" style="color: red">{{ peerError }}</p>
                     <p>Crafted with &#10084; <em>by <a href="https://r.milon.pro" target="_blank" rel="noopener noreferrer">Rubilmax</a></em></p>
                 </div>
@@ -132,27 +134,25 @@
                 </div>
             </div>
         </div>
-        
-        <script async src="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/js/materialize.min.js"></script>
     </body>
 
     <script>
-        const appPrefix = "secure-p2p-multichat-";
+        const appPrefix = "secure-p2p-multichat-"; // the prefix we will preprend to usernames
 
         const oldChats = localStorage.getItem("chats");
-        const chats = oldChats ? JSON.parse(oldChats) : [];
+        const chats = oldChats ? JSON.parse(oldChats) : []; // oldChats may be undefined, which throws error if passed into JSON.parse
 
         const app = new Vue({
             el: "#app",
             data: {
-                screen: "login",
+                screen: "login", // initialize at login screen
                 usernameInput: localStorage.getItem("username"), // to load saved username
                 peerError: "",
                 loading: false,
-                peer: {},
+                peer: {}, // initialize as empty object instead of undefined
                 targetIdInput: "",
-                connections: {},
-                peerIds: [],
+                peerIds: [], // connected to nobody at first
+                connections: {}, // maps peerIds to their correspondig PeerJS's DataConnection objects
                 chats,
                 chatMessageInput: ""
             },
@@ -162,12 +162,14 @@
                     this.submitLogin();
                 }
             },*/
-            updated: function () {
-                const chatbox = document.getElementById("chatbox");
-                if (chatbox) chatbox.scrollTop = 99999999;
+            watch: {
+                chats: function () {
+                    const chatbox = document.getElementById("chatbox");
+                    if (chatbox) chatbox.scrollTop = 99999999; // to automatically scroll the chatbox to the most recent chat message
+                }
             },
             methods: {
-                // util functions
+                // util functions to convert username to peer ids and vice-versa
                 getPeerId: username => appPrefix + username,
                 getUsername: peerId => peerId ? peerId.slice(appPrefix.length) : "",
 
@@ -202,6 +204,7 @@
                         } else if (data.type === "chat") {
                             this.receiveChat(data.chat);
                         }
+                        // please note here that if data.type is undefined, this endpoint won't do anything!
                     });
                     conn.on("close", () => this.removeConnection(conn));
                     conn.on("error", () => this.removeConnection(conn));
@@ -240,83 +243,94 @@
                         });
                     }
                 },
+                createPeer: function () {
+                    // options are useful in development to connect to local peerjs server
+                    this.peer = new Peer(this.getPeerId(this.usernameInput)/*, {
+                        host: 'localhost',
+                        port: 8080,
+                        path: 'app'
+                    }*/);
+
+                    // when peer is connected to signaling server
+                    this.peer.on("open", () => {
+                        this.screen = "chat"; // changing screen
+                        this.loading = false;
+                        this.peerError = "";
+                    });
+                    // error listener
+                    this.peer.on("error", error => {
+                        if (error.type === "peer-unavailable") { // if connection with new peer can't be established
+                            this.loading = false;
+                            this.peerError = `${this.targetIdInput} is unreachable!`; // custom error message
+                            this.targetIdInput = "";
+                        } else if (error.type === "unavailable-id") { // if requested id (thus username) is already taken
+                            this.loading = false;
+                            this.peerError = `${this.usernameInput} is already taken!`; // custom error message
+                        } else this.peerError = error; // default error message
+                    });
+
+                    // when peer receives a connection
+                    this.peer.on('connection', conn => {
+                        if (!this.peerIds.includes(conn.peer)) {
+                            this.configureConnection(conn);
+
+                            conn.on("open", () => {
+                                this.addConnection(conn);
+
+                                // send every connection previously established to connect everyone (merge chat rooms)
+                                conn.send({
+                                    type: "connections",
+                                    peerIds: this.peerIds
+                                });
+                            });
+                        }
+                    });
+                },
 
                 submitLogin: function (event) {
-                    if (event) event.preventDefault();
+                    if (event) event.preventDefault(); // to prevent default behavior which is to POST to the same page
 
                     if (this.usernameInput.length > 0 && !this.loading) {
-                        this.loading = true;
-                        this.peerError = "Loading...";
+                        this.loading = true; // update status
+                        this.peerError = ""; // reset error status
 
-                        localStorage.setItem("username", this.usernameInput);
+                        localStorage.setItem("username", this.usernameInput); // set username cookie to instanciate it at the next session
 
-                        // options are useful in development to connect to local peerjs server
-                        this.peer = new Peer(this.getPeerId(this.usernameInput)/*, {
-                            host: 'localhost',
-                            port: 8080,
-                            path: 'app'
-                        }*/);
-
-                        this.peer.on("open", () => {
-                            this.screen = "chat"; // changing screen
-                            this.loading = false;
-                            this.peerError = "";
-                        });
-                        this.peer.on("error", error => {
-                            if (error.type === "peer-unavailable") {
-                                this.loading = false;
-                                this.peerError = `${this.targetIdInput} is unreachable!`;
-                                this.targetIdInput = "";
-                            } else if (error.type === "unavailable-id") {
-                                this.loading = false;
-                                this.peerError = `${this.usernameInput} is already taken!`;
-                            } else this.peerError = error;
-                        });
-
-                        this.peer.on('connection', conn => {
-                            if (!this.peerIds.includes(conn.peer)) {
-                                this.configureConnection(conn);
-
-                                conn.on("open", () => {
-                                    this.addConnection(conn);
-
-                                    // send every connection established to connect everyone
-                                    conn.send({
-                                        type: "connections",
-                                        peerIds: this.peerIds
-                                    });
-                                });
-                            }
-                        });
+                        this.createPeer();
                     }
                 },
                 submitConnection: function (event) {
-                    event.preventDefault();
+                    event.preventDefault(); // to prevent default behavior which is to POST to the same page
 
-                    this.initiateConnection(this.getPeerId(this.targetIdInput));
+                    const peerId = this.getPeerId(this.targetIdInput); // the peer's id we want to connect to
+                    this.initiateConnection(peerId);
                 },
                 receiveChat: function (chat) {
                     this.chats.push(chat);
                     localStorage.setItem("chats", JSON.stringify(this.chats));
                 },
                 submitChat: function (event) {
-                    event.preventDefault();
+                    event.preventDefault(); // to prevent default behavior which is to POST to the same page
 
-                    const chat = {
-                        sender: this.usernameInput,
-                        message: this.chatMessageInput,
-                        timestamp: new Date().getTime()
-                    };
+                    if (this.chatMessageInput.length > 0) {
+                        // the chat object's data
+                        const chat = {
+                            sender: this.usernameInput,
+                            message: this.chatMessageInput,
+                            timestamp: new Date().getTime()
+                        };
 
-                    this.receiveChat(chat);
-                    Object.values(this.connections).forEach(conn => {
-                        conn.send({
-                            type: "chat",
-                            chat
+                        this.receiveChat(chat); // simulate receiving a chat
+                        // send chat object to connected users
+                        Object.values(this.connections).forEach(conn => {
+                            conn.send({
+                                type: "chat",
+                                chat
+                            });
                         });
-                    });
 
-                    this.chatMessageInput = "";
+                        this.chatMessageInput = ""; // reset chat message input
+                    }
                 }
             }
         });

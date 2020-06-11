@@ -1,6 +1,6 @@
 # peerjs-multichat
 
-Secure, persistent & almost serverless multichat proof of concept
+Secure, persistent, almost serverless, one-page real-time chat proof-of-concept, built in under 3 hours using WebRTC, PeerJS, Vue and javascript cookies!
 
 Use this project to securely chat with your friends, in real-time.
 
