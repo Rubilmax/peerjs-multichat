@@ -270,6 +270,9 @@
                                 this.loading = false;
                                 this.peerError = `${this.targetIdInput} is unreachable!`;
                                 this.targetIdInput = "";
+                            } else if (error.type === "unavailable-id") {
+                                this.loading = false;
+                                this.peerError = `${this.usernameInput} is already taken!`;
                             } else this.peerError = error;
                         });
 
