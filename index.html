@@ -5,7 +5,7 @@
 
         <!-- To efficiently implement sockets -->
         <script src="https://unpkg.com/peerjs@1.2.0/dist/peerjs.min.js"></script>
-        <!-- To easily manage dynamic states -->
+        <!-- To easily manage dynamic rendering -->
         <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
 
         <!-- Integrate font styles -->
@@ -251,11 +251,11 @@
                         localStorage.setItem("username", this.usernameInput);
 
                         // options are useful in development to connect to local peerjs server
-                        this.peer = new Peer(this.getPeerId(this.usernameInput), {
+                        this.peer = new Peer(this.getPeerId(this.usernameInput)/*, {
                             host: 'localhost',
                             port: 8080,
                             path: 'app'
-                        });
+                        }*/);
 
                         this.peer.on("open", () => {
                             this.screen = "chat"; // changing screen
